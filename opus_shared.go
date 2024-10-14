@@ -1,4 +1,5 @@
-// +build !amd64,!386,cgo
+//go:build !amd64 && !386 && !arm64 && cgo
+// +build !amd64,!386,!arm64,cgo
 
 package gopus
 
@@ -92,19 +93,18 @@ func NewEncoder(sampleRate, channels int, application Application) (*Encoder, er
 	return encoder, nil
 }
 
-func (e *Encoder) Encode(pcm []int16, frameSize, maxDataBytes int) ([]byte, error) {
+func (e *Encoder) Encode(pcm []int16, frameSize int, out []byte) ([]byte, error) {
 	pcmPtr := (*C.opus_int16)(unsafe.Pointer(&pcm[0]))
 
-	data := make([]byte, maxDataBytes)
-	dataPtr := (*C.uchar)(unsafe.Pointer(&data[0]))
+	dataPtr := (*C.uchar)(unsafe.Pointer(&out[0]))
 
-	encodedC := C.opus_encode(e.cEncoder, pcmPtr, C.int(frameSize), dataPtr, C.opus_int32(len(data)))
+	encodedC := C.opus_encode(e.cEncoder, pcmPtr, C.int(frameSize), dataPtr, C.opus_int32(len(out)))
 	encoded := int(encodedC)
 
 	if encoded < 0 {
 		return nil, getErr(C.int(encodedC))
 	}
-	return data[0:encoded], nil
+	return out[0:encoded], nil
 }
 
 func (e *Encoder) SetVbr(vbr bool) {
@@ -157,15 +157,17 @@ func NewDecoder(sampleRate, channels int) (*Decoder, error) {
 	return decoder, nil
 }
 
-func (d *Decoder) Decode(data []byte, frameSize int, fec bool) ([]int16, error) {
+func (d *Decoder) Decode(data []byte, frameSize int, fec bool, out []int16) ([]int16, error) {
 	var dataPtr *C.uchar
 	if len(data) > 0 {
 		dataPtr = (*C.uchar)(unsafe.Pointer(&data[0]))
 	}
 	dataLen := C.opus_int32(len(data))
 
-	output := make([]int16, d.channels*frameSize)
-	outputPtr := (*C.opus_int16)(unsafe.Pointer(&output[0]))
+	if len(out) < d.channels*frameSize {
+		return nil, errors.New("out buffer is too short")
+	}
+	outputPtr := (*C.opus_int16)(unsafe.Pointer(&out[0]))
 
 	var cFec C.int
 	if fec {
@@ -180,7 +182,7 @@ func (d *Decoder) Decode(data []byte, frameSize int, fec bool) ([]int16, error) 
 	if ret < 0 {
 		return nil, getErr(cRet)
 	}
-	return output[:ret*d.channels], nil
+	return out[:ret*d.channels], nil
 }
 
 func (d *Decoder) ResetState() {
