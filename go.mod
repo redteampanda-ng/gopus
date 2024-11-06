@@ -1,3 +1,3 @@
-module github.com/companyzero/gopus
+module github.com/redteampanda-ng/gopus
 
 go 1.16
